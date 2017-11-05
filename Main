@@ -1,0 +1,407 @@
+#lang racket
+
+(require test-engine/racket-tests)
+(require 2htdp/image)
+(require 2htdp/universe)
+
+; pop-up : Int List -> List
+; using take and drop, subdivides a list into a list of lists length n
+
+(define (pop-up n ls)
+  (if (empty? ls)
+      '()
+      (cons (take ls n) (pop-up n (drop ls n))))) 
+
+(check-expect (pop-up 2 '(a b c d e f g h))
+              (list (list 'a 'b) (list 'c 'd) (list 'e 'f) (list 'g 'h)))
+(check-expect (pop-up 3 '(a b c d e f))
+              (list (list 'a 'b 'c) (list 'd 'e 'f)))
+(check-expect (pop-up 5 (make-list 20 0))
+              (list (list 0 0 0 0 0) (list 0 0 0 0 0) (list 0 0 0 0 0) (list 0 0 0 0 0)))
+
+(define BLANK '_) ; blank value represented by _
+
+; blank : arg -> Bool
+; checks if the given argument matches BLANK
+
+(define (blank? b)
+  (equal? b BLANK))
+
+(check-expect (blank? BLANK) #true)
+(check-expect (blank? 2048) #false)
+(check-expect (blank? blank?) #false)
+
+(define empty-board
+ (make-list 4 (make-list 4 BLANK)))
+
+(define exboard1
+ (list (list 2 2 2 2)
+       (list 4 '_ 4 '_)
+       (list '_ 8 8 8)
+       (list 16 '_ '_ 16)))
+
+(define exboard2
+ (list (list 2 2 2 2)
+       (list 4 4 4 4)
+       (list 8 8 8 8)
+       (list 16 16 16 16)))
+
+; board-full? : List -> Bool
+; using nested ormaps, checks for the presence of a blank in
+; the board and returns #t if none are found
+
+(define (board-full? board)
+  (not (ormap (lambda (row) (ormap blank? row)) board)))
+
+(check-expect (board-full? '((4)))
+              #true)
+(check-expect (board-full? exboard1)
+              #false)
+(check-expect (board-full? exboard2)
+              #true)
+
+(struct coord (row col)) ; coordinates of a tile
+
+; get-blanks : returns a list of coords that correspond to each
+; blank's position in a board
+
+(define (get-blanks board)
+
+  ; helper : List Int -> List
+  ; stops when the current postition is too great to index in the board,
+  ; uses quotient and remainder to get row, col of the current tile
+  
+  (define (helper board pos)
+    (let ([l (length board)])
+      (if (= pos (* l l))
+          '()
+          (if (blank? (list-ref (list-ref board (quotient pos l))
+                                                (remainder pos l)))
+              (cons (coord (quotient pos l) (remainder pos l))
+                    (helper board (add1 pos)))
+              (helper board (add1 pos))))))
+
+  (helper board 0))
+
+; add-new-tile : List -> List
+; no idea how this works
+
+(define (add-new-tile board)
+  (define (helper bls seen-blanks cur-index blank-index)
+    (cond
+      [(empty? bls) blank-index]
+      [(blank? (first bls))
+           (helper (rest bls)
+                   (add1 seen-blanks)
+                   (add1 cur-index)
+                   (if (> (/ 1.0 seen-blanks) (random))
+                       cur-index
+                       blank-index))]
+      [else
+       (helper (rest bls)
+               seen-blanks
+               (add1 cur-index)
+               blank-index)]))
+  (let ([pop-size (length (first board))]
+        [fboard (flatten board)])
+    (let ([blank-index (helper fboard 1 0 #f)]
+          [new-val (if (> 0.2 (random)) 4 2)])
+      (if (not blank-index)
+          board
+          (pop-up pop-size
+                  (list-set fboard
+                            blank-index
+                            new-val))))))
+
+(check-expect (add-new-tile '((4))) (list (list 4)))
+(check-expect
+  (board-full? (add-new-tile (add-new-tile
+               (add-new-tile (add-new-tile (add-new-tile exboard1))))))
+  #true)
+
+(define TILE-SIZE 64)
+(define FONT-SIZE 32)
+(define GRID-SPACING 6)
+(define GRID-COLOR (color 186 172 160))
+
+(struct tile (value fg bg)) ; tile struct to hold value and colors
+(struct tpair (x tile)) ; number associated with each tile, since names of constants can't be integers
+(define pair-vals (list 2 4 8 16 32 64 128 256 512 1024 2048)) ; available values to color tiles with
+
+(define blank (tile BLANK (color 105 105 105) (color 204 192 179))) ; blank tile
+(define two (tile "2" (color 105 105 105) (color 238 228 218))) ; tile with val 2
+(define four (tile "4" (color 105 105 105) (color 237 224 200))) ; etc.
+(define eight (tile "8" (color 255 255 255) (color 242 177 121)))
+(define sixteen (tile "16" (color 255 255 255) (color 245 149 99)))
+(define thirty-two (tile "32" (color 255 255 255) (color 246 124 95)))
+(define sixty-four (tile "64" (color 255 255 255) (color 246 94 59)))
+(define one-hundred-twenty-eight (tile "128" (color 255 255 255) (color 237 207 114)))
+(define two-hundred-fifty-six (tile "256" (color 255 255 255) (color 237 204 97)))
+(define five-hundred-twelve (tile "512" (color 255 255 255) (color 237 200 80)))
+(define one-thousand-twenty-four (tile "1024" (color 255 255 255) (color 237 197 63)))
+(define two-thousand-forty-eight (tile "2048" (color 255 255 255) (color 237 194 46)))
+
+(define pairs (list (tpair 2 two) ; int 2 goes with tile 'two'
+                    (tpair 4 four) ; etc.
+                    (tpair 8 eight)
+                    (tpair 16 sixteen)
+                    (tpair 32 thirty-two)
+                    (tpair 64 sixty-four)
+                    (tpair 128 one-hundred-twenty-eight)
+                    (tpair 256 two-hundred-fifty-six)
+                    (tpair 512 five-hundred-twelve)
+                    (tpair 1024 one-thousand-twenty-four)
+                    (tpair 2048 two-thousand-forty-eight)))
+
+; val->image : Int -> Image
+; does some pretty wonky math to convert an int into a tile with the
+; appropriate background and foreground colors
+
+(define (val->image val)
+  (cond
+    [(equal? '_ val)
+     (overlay (square TILE-SIZE 'solid (tile-bg blank))
+              (square (+ TILE-SIZE GRID-SPACING) ; used full grid spacing, half looked too thin
+                      'solid
+                      GRID-COLOR))]
+    [(member val pair-vals) ; if the value is in the unique tile colorset
+     (overlay
+      (overlay
+       (text (number->string val) ; take the val as a string
+             (- FONT-SIZE (* 4 (- (string-length (number->string val)) 2))) ;reduce font size as needed
+             (tile-fg (tpair-tile (list-ref pairs ; get the foreground color of the tile associated with val
+                                    (sub1 (inexact->exact (/ (log val) (log 2))))))))
+                                    ; by subtracting 1 from log2 val to get the index of the associated tile
+       (square TILE-SIZE
+               'solid
+               (tile-bg (tpair-tile (list-ref pairs
+                                      (sub1 (inexact->exact (/ (log val) (log 2))))))))) ; same here
+       (square (+ TILE-SIZE GRID-SPACING) 'solid GRID-COLOR))]
+    [else (val->image 2048)])) ; otherwise use 2048 coloring 
+
+; board->image : List -> Image
+; Uses foldl with a result variable in the lambda, along with a helper
+; to apply beside to every row and above to the completed rows
+
+(define (board->image board)
+  (define (row->image row)
+    (foldl
+     (lambda (elem res) (beside res elem))
+     (val->image (first row))
+     (map val->image (rest row))))
+  (overlay
+    (foldl
+     (lambda (elem res) (above res elem))
+     (row->image (first board))
+     (map row->image (rest board)))
+    (square (+ (* 5 GRID-SPACING) (* 4 TILE-SIZE))
+            'solid
+            GRID-COLOR)))
+
+; slide-row-left : List -> List
+; implements the algorithm described in the assignment, preserving order
+; and keeping track of merges as necessary
+
+(define (slide-row-left row)
+
+  (define (helper row last-number blanks)
+    (cond
+      [(empty? row) (if (equal? last-number #f)
+                         blanks
+                        (cons last-number blanks))]
+      [(blank? (first row))
+       (helper (rest row)
+                last-number
+               (cons BLANK blanks))]
+      [(equal? last-number (first row))
+       (cons (* 2 last-number)
+             (helper (rest row)
+                      #f
+                     (cons BLANK blanks)))]
+      [(equal? last-number #f)
+       (helper (rest row)
+               (first row)
+               blanks)]
+      [else
+       (cons last-number
+             (helper (rest row)
+                     (first row)
+                      blanks))]))
+
+  (helper row #f '()))
+
+(check-expect (slide-row-left '()) '())
+(check-expect (slide-row-left '(_)) (list '_))
+(check-expect (slide-row-left '(2)) (list 2))
+(check-expect (slide-row-left '(_ _)) (list '_ '_))
+(check-expect (slide-row-left '(2 _)) (list 2 '_))
+(check-expect (slide-row-left '(_ 2)) (list 2 '_))
+(check-expect (slide-row-left '(2 2)) (list 4 '_))
+(check-expect (slide-row-left '(2 4)) (list 2 4))
+(check-expect (slide-row-left '(4 4)) (list 8 '_))
+(check-expect (slide-row-left '(_ _ _)) (list '_ '_ '_))
+(check-expect (slide-row-left '(2 _ _)) (list 2 '_ '_))
+(check-expect (slide-row-left '(_ 2 _)) (list 2 '_ '_))
+(check-expect (slide-row-left '(_ _ 2)) (list 2 '_ '_))
+(check-expect (slide-row-left '(2 2 _)) (list 4 '_ '_))
+(check-expect (slide-row-left '(2 _ 2)) (list 4 '_ '_))
+(check-expect (slide-row-left '(_ 2 2)) (list 4 '_ '_))
+(check-expect (slide-row-left '(2 4 _)) (list 2 4 '_))
+(check-expect (slide-row-left '(2 _ 4)) (list 2 4 '_))
+(check-expect (slide-row-left '(_ 2 4)) (list 2 4 '_))
+(check-expect (slide-row-left '(2 2 2)) (list 4 2 '_))
+(check-expect (slide-row-left '(4 2 2)) (list 4 4 '_))
+(check-expect (slide-row-left '(2 4 2)) (list 2 4 2))
+(check-expect (slide-row-left '(2 2 4)) (list 4 4 '_))
+(check-expect (slide-row-left '(2 4 8)) (list 2 4 8))
+
+; slide-row-right : List -> List
+; reverses a row, slides it left, reverses it again
+
+(define (slide-row-right row)
+  (reverse (slide-row-left (reverse row))))
+
+(check-expect (slide-row-right '(_ _ 2 2 _ 2 4 _ _ 4))
+ (list '_ '_ '_ '_ '_ '_ '_ 2 4 8))
+
+; slide-left : List -> List
+; slides every row on the board left
+
+(define (slide-left board)
+  (map slide-row-left board))
+
+(check-expect (slide-left exboard1)
+             '((4 4 _ _) (8 _ _ _) (16 8 _ _) (32 _ _ _)))
+(check-expect (slide-left exboard2)
+             '((4 4 _ _) (8 8 _ _) (16 16 _ _) (32 32 _ _)))
+
+(check-expect (slide-left '((2 _ 2 _) (4 _ _ 2) (2 8 4 4) (8 _ 4 2)))
+                          '((4 _ _ _) (4 2 _ _) (2 8 8 _) (8 4 2 _)))
+(check-expect (slide-left '((_ _ _ _) (_ _ 8 _) (2 2 _ 4) (8 4 2 2)))
+                          '((_ _ _ _) (8 _ _ _) (4 4 _ _) (8 4 4 _)))
+
+; slide-right : List -> List
+; slides every row on the board right
+
+(define (slide-right board)
+  (map slide-row-right board))
+
+(check-expect (slide-right exboard1)
+             '((_ _ 4 4) (_ _ _ 8) (_ _ 8 16) (_ _ _ 32)))
+(check-expect (slide-right exboard2)
+             '((_ _ 4 4) (_ _ 8 8) (_ _ 16 16) (_ _ 32 32)))
+
+(check-expect (slide-right '((2 _ 2 _) (4 _ _ 2) (2 8 4 4) (8 _ 4 2)))
+                           '((_ _ _ 4) (_ _ 4 2) (_ 2 8 8) (_ 8 4 2)))
+(check-expect (slide-right '((_ _ _ _) (_ _ 8 _) (2 2 _ 4) (8 4 2 2)))
+                           '((_ _ _ _) (_ _ _ 8) (_ _ 4 4) (_ 8 4 4)))
+
+; transpose : List -> List
+; uses apply to map list over all elements, which makes a list of the first elements,
+; then the second, etc. effectively transposing the board
+
+(define (transpose lss)
+  (apply map list lss))
+           
+(check-expect (transpose '(()))
+              '())
+(check-expect (transpose '((5)))
+              (list (list 5)))
+(check-expect (transpose '((a b c) (d e f) (g h i)))
+              (list (list 'a 'd 'g) (list 'b 'e 'h) (list 'c 'f 'i)))
+(check-expect (transpose '((1 2) (3 4) (5 6)))
+              (list (list 1 3 5) (list 2 4 6)))
+(check-expect (equal? (transpose (transpose exboard1)) exboard1)
+              #true)
+
+; slide-up : List -> List
+; transpose, slide "left", transpose back
+
+(define (slide-up board)
+  (transpose (slide-left (transpose board))))
+
+(check-expect (slide-up exboard1)
+             '((2 2 2 2) (4 8 4 8) (16 _ 8 16) (_ _ _ _)))
+(check-expect (slide-up exboard2)
+             '((2 2 2 2) (4 4 4 4) (8 8 8 8) (16 16 16 16)))
+
+(check-expect (slide-up '((2 _ 2 _) (4 _ _ 2) (2 8 4 4) (8 _ 4 2)))
+                        '((2 8 2 2) (4 _ 8 4) (2 _ _ 2) (8 _ _ _)))
+(check-expect (slide-up '((_ _ _ _) (_ _ 8 _) (2 2 _ 4) (8 4 2 2)))
+                        '((2 2 8 4) (8 4 2 2) (_ _ _ _) (_ _ _ _)))
+
+; slide-down : List -> List
+; transpose, slide "right", transpose back
+
+(define (slide-down board)
+  (transpose (slide-right (transpose board))))
+
+(check-expect (slide-down exboard2)
+             '((2 2 2 2) (4 4 4 4) (8 8 8 8) (16 16 16 16)))
+(check-expect (slide-down exboard1)
+             '((_ _ _ _) (2 _ 2 2) (4 2 4 8) (16 8 8 16)))
+
+(check-expect (slide-down '((2 _ 2 _) (4 _ _ 2) (2 8 4 4) (8 _ 4 2)))
+                          '((2 _ _ _) (4 _ _ 2) (2 _ 2 4) (8 8 8 2)))
+(check-expect (slide-down '((_ _ _ _) (_ _ 8 _) (2 2 _ 4) (8 4 2 2)))
+                          '((_ _ _ _) (_ _ _ _) (2 2 8 4) (8 4 2 2)))
+
+; game-lost? : List -> Bool
+; checks if the board is full, and if the board is still full
+; after performing all slide operations
+
+(define (game-lost? board)
+  (and (board-full? board) (board-full? (slide-right
+                                        (slide-left
+                                        (slide-down
+                                        (slide-up board)))))))
+
+(check-expect (game-lost? exboard1) #f)
+(check-expect (game-lost? exboard2) #f)
+(check-expect (game-lost? '((2 4 2 4) (4 2 4 2) (2 4 2 4) (4 2 4 2))) #t)
+
+(define-struct game-state (board lost?)) ; state struct with board and loss state
+
+; key-handler : game-state String -> game-state
+; performs slides and adds a new tile if the game is not lost, otherwise sit there
+; until the user presses r to reset
+
+(define (key-handler state k)
+  (if (not (game-lost? (game-state-board state)))
+      (cond
+        [(string=? "right" k) (game-state (add-new-tile (slide-right (game-state-board state))) #f)]
+        [(string=? "left" k)  (game-state (add-new-tile (slide-left  (game-state-board state))) #f)]
+        [(string=? "up" k)    (game-state (add-new-tile (slide-up    (game-state-board state))) #f)]
+        [(string=? "down" k)  (game-state (add-new-tile (slide-down  (game-state-board state))) #f)]
+        [else state])
+      (if (string=? "r" k)
+          (game-state (add-new-tile empty-board) #f)
+          (game-state (game-state-board state) #t))))
+
+;; How to write check-expects that use the game-state?
+
+; (check-expect (equal? (key-handler (game-state exboard2 #f) "up")
+;                       (key-handler (game-state exboard2 #f) "down")) #t)
+
+; draw-game : game-state -> image
+; overlay with lose message and prompt if game is lost,
+; otherwise draw standard board
+
+(define (draw-game state)
+  (if (game-state-lost? state)
+      (overlay
+        (text "You lost. Press r to restart" 24 "black")
+        (board->image (game-state-board state)))
+      (board->image (game-state-board state))))
+
+(define initial-state (game-state (add-new-tile empty-board) #f)) ; one tile, not lost
+
+; big-bang method to run the game itself
+
+(define (play)
+  (big-bang initial-state
+   [on-key key-handler]
+   [to-draw draw-game]))
+   
+(test) ; test call
+(play) ; run
