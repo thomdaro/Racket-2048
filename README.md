@@ -1,6 +1,6 @@
 # Racket-2048
 
-Created for an introductory, 200-level course in computer science at Indiana University Bloomington.
+Created for an introductory, 200-level course in computer science at Indiana University Bloomington, Fall 2016.
 
 DrRacket or other Racket interpreter required to run. 
 
